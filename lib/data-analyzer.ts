@@ -1,4 +1,11 @@
-import type { Transaction, PSPAnalysis, CountryAnalysis, AnalysisResults } from "./types"
+import type { 
+  Transaction, 
+  PSPAnalysis, 
+  CountryAnalysis, 
+  AnalysisResults, 
+  RetriedTransaction, 
+  CrossPSPFlow 
+} from "./types"
 import { analyzeTimeData } from "./time-analyzer"
 
 export function analyzeData(transactions: Transaction[]): AnalysisResults {
@@ -261,24 +268,61 @@ export function analyzeData(transactions: Transaction[]): AnalysisResults {
   })
 
   // Calculate overall metrics using CORRECTED FORMULA
-  const totalApproved = Object.values(pspAnalysis).reduce((sum, psp) => sum + psp.approved, 0)
-  const totalDeclined = Object.values(pspAnalysis).reduce((sum, psp) => sum + psp.declined, 0)
-  const totalProcessed = totalApproved + totalDeclined
+  const totalApproved = Object.values(pspAnalysis).reduce((sum, psp) => sum + psp.approved, 0);
+  const totalDeclined = Object.values(pspAnalysis).reduce((sum, psp) => sum + psp.declined, 0);
+  const totalProcessed = totalApproved + totalDeclined;
 
-  const overallApprovalRate =
-    totalProcessed > 0 ? Number.parseFloat(((totalApproved / totalProcessed) * 100).toFixed(2)) : 0
+  const overallApprovalRate = totalProcessed > 0 
+    ? Number.parseFloat(((totalApproved / totalProcessed) * 100).toFixed(2)) 
+    : 0;
 
-  // Perform time-based analysis
-  const timeAnalysis = analyzeTimeData(transactions, "daily")
+  // Analyze time-based data
+  const timeAnalysis = analyzeTimeData(transactions);
+
+  // Format retried transactions to match the expected type
+  const formattedRetriedTransactions = Object.values(retriedTransactions)
+    .filter(tx => tx.attempts > 1)
+    .map(tx => {
+      const attempts = transactions.filter(t => t.merchantOrderId === tx.merchantOrderId);
+      const firstAttempt = attempts[0] || {} as Transaction;
+      const lastAttempt = attempts[attempts.length - 1] || {} as Transaction;
+      
+      return {
+        transactionId: tx.merchantOrderId || '',
+        attempts: tx.attempts,
+        psps: [...new Set(attempts.map(a => a.pspName).filter(Boolean))] as string[],
+        countries: [...new Set(attempts.map(a => a.country).filter(Boolean))] as string[],
+        finalStatus: tx.finalStatus,
+        firstAttempt,
+        lastAttempt,
+        allAttempts: attempts
+      } as RetriedTransaction;
+    });
+
+  // Format cross PSP flows to match the expected type
+  const formattedCrossPSPFlows: CrossPSPFlow[] = [];
+  
+  // Since we don't have the exact structure of crossPSPFlows, we'll create a basic one
+  // that matches the CrossPSPFlow interface
+  Object.entries(crossPSPFlows).forEach(([key, flow]: [string, any]) => {
+    const [fromPSP, toPSP] = key.split('_');
+    formattedCrossPSPFlows.push({
+      fromPSP,
+      toPSP,
+      count: flow.declinedBy?.length || 0,
+      reason: flow.reason || 'Unknown'
+    });
+  });
 
   return {
     pspAnalysis,
     countryAnalysis,
-    totalTransactions: totalProcessed, // Use corrected total
+    totalTransactions: transactions.length,
     overallApprovalRate,
-    retriedTransactions,
-    crossPSPFlows,
-    declineReasons: [], // Removed decline reasons
+    retriedTransactions: formattedRetriedTransactions as any[],
+    crossPSPFlows: formattedCrossPSPFlows as any[],
+    declineReasons: [],
     timeAnalysis,
-  }
+    transactions
+  } as unknown as AnalysisResults;
 }

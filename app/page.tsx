@@ -25,12 +25,18 @@ export default function Home() {
     try {
       setTransactions(data)
 
-      // Run both analyses
-      const results = analyzeData(data)
-      const improvedAnalysis = improvedAnalyzeData(data)
+      // Yield to the event loop to keep UI responsive
+      await new Promise((r) => setTimeout(r, 0))
 
-      setAnalysisResults(results)
+      // Compute improved analysis first (used widely)
+      const improvedAnalysis = await Promise.resolve().then(() => improvedAnalyzeData(data))
       setImprovedResults(improvedAnalysis)
+
+      // Yield again before running the second, heavier analysis
+      await new Promise((r) => setTimeout(r, 0))
+
+      const results = await Promise.resolve().then(() => analyzeData(data))
+      setAnalysisResults(results)
     } catch (error) {
       console.error("Error analyzing data:", error)
     } finally {
@@ -116,7 +122,10 @@ export default function Home() {
 
           <TabsContent value="time-analysis">
             {analysisResults ? (
-              <TimeAnalysisComponent timeAnalysis={analysisResults.timeAnalysis} />
+              <TimeAnalysisComponent 
+                timeAnalysis={analysisResults.timeAnalysis} 
+                transactions={transactions} 
+              />
             ) : (
               <Card>
                 <CardHeader>

@@ -107,4 +107,5 @@ export interface AnalysisResults {
   crossPSPFlows: CrossPSPFlow[]
   declineReasons: DeclineCategory[]
   timeAnalysis: TimeAnalysis
+  transactions: Transaction[]
 }
