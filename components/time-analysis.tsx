@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { format } from "date-fns"
+import * as XLSX from "xlsx"
 import { CalendarIcon, Download, Filter } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -332,61 +333,58 @@ export function TimeAnalysisComponent({
     }).filter(Boolean); // Ensure we don't have any undefined/null entries
   }, [filteredDaily, selectedPSPs]);
 
-  // Handle export to CSV
+  // Handle export to XLSX with two sheets
   const handleExport = () => {
     if (exportData.length === 0) {
       alert('No data to export with the current filters');
       return;
     }
-    
-    // Ensure we have the most up-to-date filtered data
-    const dataToExport = [...exportData];
-    
-    // Sort by date and PSP for better readability
-    dataToExport.sort((a, b) => {
+
+    // Sheet 1: current PSP-wise (or All) rows
+    const dataToExport = [...exportData].sort((a, b) => {
       const dateCompare = new Date(a.date).getTime() - new Date(b.date).getTime();
       if (dateCompare !== 0) return dateCompare;
-      return a.psp.localeCompare(b.psp);
+      return (a.psp || '').localeCompare(b.psp || '');
     });
-    
-    // Format the data for CSV
-    const formattedData = dataToExport.map(item => ({
-      Date: item.date,
-      PSP: item.psp,
-      Total: item.total,
-      Approved: item.approved,
-      Declined: item.declined,
-      'Approval Rate': typeof item.approvalRate === 'number' 
-        ? `${item.approvalRate.toFixed(2)}%` 
-        : item.approvalRate
-    }));
-    
-    const headers = ['Date', 'PSP', 'Total', 'Approved', 'Declined', 'Approval Rate'];
-    const csv = convertToCSV(formattedData, headers);
-    
-    const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    
-    // Create a more descriptive filename
+
+    const sheet1 = XLSX.utils.json_to_sheet(
+      dataToExport.map(item => ({
+        Date: item.date,
+        PSP: item.psp,
+        Total: item.total,
+        Approved: item.approved,
+        Declined: item.declined,
+        'Approval Rate (%)': typeof item.approvalRate === 'number' ? Number(item.approvalRate.toFixed(2)) : item.approvalRate
+      }))
+    );
+
+    // Sheet 2: date-wise summary (no PSP column)
+    const dateSummaryRows = filteredDaily.map((day) => {
+      const numericRate = typeof day.approvalRate === 'number'
+        ? day.approvalRate
+        : Number(day.approvalRate || 0);
+      return {
+        Date: day.date,
+        Total: day.total,
+        Approved: day.approved,
+        Declined: day.declined,
+        'Approval Rate (%)': Number(numericRate.toFixed(2))
+      };
+    });
+    const sheet2 = XLSX.utils.json_to_sheet(dateSummaryRows);
+
+    const wb = XLSX.utils.book_new();
+    // Append in stable order and ensure unique names
+    XLSX.utils.book_append_sheet(wb, sheet2, 'Date Summary');
+    XLSX.utils.book_append_sheet(wb, sheet1, 'PSP Detail');
+
     let filename = 'approval-ratios';
-    if (dateRange.from) {
-      filename += `-from-${format(dateRange.from, 'yyyy-MM-dd')}`;
-    }
-    if (dateRange.to) {
-      filename += `-to-${format(dateRange.to, 'yyyy-MM-dd')}`;
-    }
-    if (selectedPSPs.length > 0) {
-      filename += `-${selectedPSPs.length}-psps`;
-    }
-    filename += `-${format(new Date(), 'yyyy-MM-dd')}.csv`;
-    
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url); // Clean up
+    if (dateRange.from) filename += `-from-${format(dateRange.from, 'yyyy-MM-dd')}`;
+    if (dateRange.to) filename += `-to-${format(dateRange.to, 'yyyy-MM-dd')}`;
+    if (selectedPSPs.length > 0) filename += `-${selectedPSPs.length}-psps`;
+    filename += `-${format(new Date(), 'yyyy-MM-dd')}.xlsx`;
+
+    XLSX.writeFile(wb, filename);
   }
 
 
